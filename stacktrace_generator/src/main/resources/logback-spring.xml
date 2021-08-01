@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true">
+    <include resource="org/springframework/boot/logging/logback/defaults.xml" />
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml" />
+
+    <appender name="logstashAppender" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <fieldNames>
+                <timestamp>service_time</timestamp>
+            </fieldNames>
+            <timestampPattern>yyyy-MM-dd HH:mm:ss.SSS</timestampPattern>
+            <!-- This 'fixes' double quote problem for elastic -->
+            <jsonFactoryDecorator class="net.logstash.logback.decorate.CharacterEscapesJsonFactoryDecorator">
+                <escape>
+                    <targetCharacterCode>34</targetCharacterCode>
+                    <escapeSequence>'</escapeSequence>
+                </escape>
+            </jsonFactoryDecorator>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <!--Configuration for Docker image tag 2.0.0 with Logstash appender-->
+        <appender-ref ref="logstashAppender" />
+
+        <!--Configuration for Docker image tag 1.0.0 with default Console appender-->
+        <!--<appender-ref ref="CONSOLE" />-->
+    </root>
+</configuration>

@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: logging
+  labels:
+    k8s-app: logstash
+data:
+  logstash.yml: |
+    http.host: "0.0.0.0"
+    path.config: /usr/share/logstash/pipeline
+    pipeline.workers: 1
+    log.level: info
+  jvm.options: |
+    -XX:MaxRAMPercentage=75.0
+  logstash.conf: |    
+    input {
+      file {
+        path => ["/var/log/containers/java*.log"]
+        tags => ["java"]
+        codec  => multiline {
+          pattern => '^.*log\":\"\D'
+          what => "previous"
+        }
+      }
+    }
+    filter {
+      ruby {
+        code => 'if event.get("message").nil?
+                    event.tag("log_aggregation_failed")
+                 else
+                    jsonLogs = event.get("message").split("}\n")
+                    result = []                    
+                    first = true                                                        
+                    
+                    for record in jsonLogs
+                      unless record.end_with?("}")
+                        record.concat("}")
+                      end                   
+                      
+                      json = JSON.parse(record)                    
+                      if json["log"].nil?
+                        event.tag("log_aggregation_failed")
+                      else
+                        if first
+                          event.set("stream", json["stream"])
+                          event.set("time", json["time"])
+                          first = false
+                        end
+                        result.push(json["log"])                        
+                      end
+                    end
+                    
+                    unless result.empty?
+                      event.set("message", result.join(""))
+                    end                    
+                 end'
+      }
+      if [path] =~ /^\/var\/log\/containers\/.*/ {
+        grok {
+          match => {
+            "path" => "(?:/var/log/containers/(?<pod_name>.*)_(?<namespace_name>.*)_(?<container_name>.*)-(?<container_id>.*))"          
+          }
+          tag_on_failure => "_failed_grok_k8s"
+          ecs_compatibility => "disabled"
+          target => "kubernetes"
+        }            
+      }
+      if [message] =~ /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}.*/ {
+        grok {
+          match => {
+            "message" => "(?<logtime>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}*)"          
+          }
+          tag_on_failure => "_failed_grok"
+          ecs_compatibility => "disabled"
+        }
+        date {
+          match => ["logtime", "yyyy-MM-dd HH:mm:ss.SSS"]
+          tag_on_failure => "_failed_date"
+        }          
+      }       
+    }
+    output {
+      elasticsearch {
+        index => "logstash-%{+YYYY.MM.dd}"
+        hosts => [ "${ES_HOSTS}" ]
+      }
+      stdout {}
+    }

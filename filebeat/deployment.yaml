@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    name: java-stacktrace-generator
+  name: java-stacktrace-generator
+  namespace: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: java-stacktrace-generator
+  template:
+    metadata:
+      labels:
+        app: java-stacktrace-generator
+        type: java
+    spec:
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      containers:
+        - env:
+            - name: JAVA_OPTS
+              value: -XX:MaxRAMPercentage=75.0
+            - name: RABBITMQ_HOST
+              value: localhost
+            - name: RABBITMQ_PORT
+              value: "5672"
+            - name: RABBITMQ_USERNAME
+              value: rabbit
+            - name: RABBITMQ_PASSWORD
+              value: rabbit
+          image: stacktrace_generator:1.0.0
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /actuator/health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 240
+            periodSeconds: 900
+            successThreshold: 1
+            timeoutSeconds: 120
+          name: java-stacktrace-generator
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          resources:
+            limits:
+              cpu: 200m
+              memory: 500Mi
+            requests:
+              cpu: 200m
+              memory: 500Mi

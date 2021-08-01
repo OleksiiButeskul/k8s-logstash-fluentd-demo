@@ -1,0 +1,109 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: logstash
+  namespace: logging
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: logstash
+  namespace: logging
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: logstash
+roleRef:
+  kind: ClusterRole
+  name: logstash
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: logstash
+  namespace: logging
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: logstash
+  namespace: logging
+  labels:
+    k8s-app: logstash-logging
+    version: v1
+spec:
+  selector:
+    matchLabels:
+      k8s-app: logstash-logging
+      version: v1
+  template:
+    metadata:
+      labels:
+        k8s-app: logstash-logging
+        version: v1
+    spec:
+      serviceAccount: logstash
+      serviceAccountName: logstash
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      containers:
+      - name: logstash
+        image: docker.elastic.co/logstash/logstash:7.12.1
+        env:
+          - name:  ES_HOSTS
+            value: "http://elasticsearch:9200"
+        securityContext:
+          runAsUser: 0
+        resources:
+          limits:
+            memory: 1Gi
+          requests:
+            cpu: 500m
+            memory: 1Gi
+        volumeMounts:
+        - name: config-volume
+          mountPath: /usr/share/logstash/config
+        - name: logstash-pipeline-volume
+          mountPath: /usr/share/logstash/pipeline
+        - name: varlog
+          mountPath: /var/log
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true          
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: config-volume
+        configMap:
+          name: logstash-config
+          items:
+            - key: logstash.yml
+              path: logstash.yml
+            - key: jvm.options
+              path: jvm.options              
+      - name: logstash-pipeline-volume
+        configMap:
+          name: logstash-config
+          items:
+            - key: logstash.conf
+              path: logstash.conf
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers          
